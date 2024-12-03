@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use std::iter::once;
+use std::{cmp::Ordering, iter::once};
 
 /// ...
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,134 +15,111 @@ pub enum Record {
 
 impl Record {
     /// ...
-    fn try_from_empty<I>(margin: usize, item: u32, items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
+    #[inline]
+    fn build_empty(margin: usize, items: &[u32], item: u32) -> Option<Self> {
         // ...
         Self::Single(item).try_from_inner(margin, items)
     }
 
     /// ...
-    fn try_from_single<I>(margin: usize, prev: u32, item: u32, items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
-        match (item.cmp(&prev), (item.max(prev) - item.min(prev)) <= 3) {
-            // If the next element is larger than the previous,
-            // recurse with a strictly increasing record.
-            (Ordering::Greater, true) => {
-                Self::Increasing(vec![prev, item]).try_from_inner(margin, items)
-            }
+    #[inline]
+    fn build_single(margin: usize, items: &[u32], item: u32, prev: u32) -> Option<Self> {
+        // If the absolute difference between the current and previous items is
+        // greater than 3, then abort evaluation.
+        (item.abs_diff(prev) <= 3).then_some(())?;
 
-            // If the next element is smaller than the previous,
-            // recurse with a strictly decreasing record.
-            (Ordering::Less, true) => {
-                Self::Decreasing(vec![prev, item]).try_from_inner(margin, items)
-            }
-
-            // If the two elements are equal, do not evaluate the eager path.
-            _ => None,
+        // ...
+        match item.cmp(&prev) {
+            // ...
+            Ordering::Equal => None,
+            // ...
+            Ordering::Greater => Self::Increasing(vec![prev, item]).try_from_inner(margin, items),
+            // ...
+            Ordering::Less => Self::Decreasing(vec![prev, item]).try_from_inner(margin, items),
         }
     }
 
     /// ...
-    fn try_from_increasing<I>(margin: usize, prevs: Vec<u32>, item: u32, items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
-        // A strictly increasing record is guaranteed to have at least two items.
-        let valid = prevs
-            .last()
-            .copied()
-            .map(|prev| (item > prev) && (item.max(prev) - item.min(prev)) <= 3)?;
+    #[inline]
+    fn build_increasing(margin: usize, items: &[u32], item: u32, seen: &Vec<u32>) -> Option<Self> {
+        // `Report::Decreasing` will always be non-empty, so this is safe.
+        let prev = seen.last().copied().unwrap();
 
-        valid.then_some(()).and_then(|_| {
-            // Recurse eagerly with the record created from the original vector
-            // followed by the new item.
-            let values = prevs.clone().into_iter().chain(once(item)).collect();
-            Self::Increasing(values).try_from_inner(margin, items.clone())
-        })
+        // If the current item is not more than the previous, or their absolute difference
+        // is greater than 3, then abort evaluation.
+        (item > prev && item.abs_diff(prev) <= 3).then_some(())?;
+
+        // ...
+        let seen = seen.clone().into_iter().chain(once(item)).collect();
+
+        // ...
+        Self::Increasing(seen).try_from_inner(margin, items)
     }
 
     /// ...
-    fn try_from_decreasing<I>(margin: usize, prevs: Vec<u32>, item: u32, items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
-        // A strictly decreasing record is guaranteed to have at least two items.
-        let valid = prevs
-            .last()
-            .copied()
-            .map(|prev| (item < prev) && (item.max(prev) - item.min(prev)) <= 3)?;
+    #[inline]
+    fn build_decreasing(margin: usize, items: &[u32], item: u32, seen: &Vec<u32>) -> Option<Self> {
+        // `Report::Decreasing` will always be non-empty, so this is safe.
+        let prev = seen.last().copied().unwrap();
 
-        valid.then_some(()).and_then(|_| {
-            // Recurse eagerly with the record created from the original vector
-            // followed by the new item.
-            let values = prevs.clone().into_iter().chain(once(item)).collect();
-            Self::Decreasing(values).try_from_inner(margin, items)
-        })
+        // If the current item is not less than the previous, or their absolute difference
+        // is greater than 3, then abort evaluation.
+        (item < prev && item.abs_diff(prev) <= 3).then_some(())?;
+
+        // ...
+        let seen = seen.clone().into_iter().chain(once(item)).collect();
+
+        // ...
+        Self::Decreasing(seen).try_from_inner(margin, items)
     }
 
     /// ...
-    fn try_from_eager<I>(self, margin: usize, item: u32, items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
+    #[inline]
+    fn try_from_match(self, margin: usize, items: &[u32], item: u32) -> Option<Self> {
         match self {
-            // If the record is empty, recurse with a single element record.
-            Self::Empty => Self::try_from_empty(margin, item, items),
-
-            // If the record has a single element, recurse with a multi-element record.
-            Self::Single(prev) => Self::try_from_single(margin, prev, item, items),
-
-            // If the record is strictly increasing, recurse eagerly if the next item
-            // is larger than the previous.
-            Self::Increasing(prevs) => Self::try_from_increasing(margin, prevs, item, items),
-
-            // If the record is strictly increasing, recurse eagerly if the next item
-            // is larger than the previous.
-            Self::Decreasing(prevs) => Self::try_from_decreasing(margin, prevs, item, items),
+            // ...
+            Self::Empty => Self::build_empty(margin, items, item),
+            // ...
+            Self::Single(prev) => Self::build_single(margin, items, item, prev),
+            // ...
+            Self::Increasing(ref seen) => Self::build_increasing(margin, items, item, seen),
+            // ...
+            Self::Decreasing(ref seen) => Self::build_decreasing(margin, items, item, seen),
         }
     }
 
     /// ...
-    fn try_from_inner<I>(self, margin: usize, mut items: I) -> Option<Record>
-    where
-        I: Iterator<Item = u32> + Clone,
-    {
-        // Base case: no more items to read, so return the current record.
-        let Some(item) = items.next() else {
+    fn try_from_inner(self, margin: usize, items: &[u32]) -> Option<Self> {
+        // Base Case: ...
+        let Some((&item, rest)) = items.split_first() else {
             return Some(self);
         };
 
-        // Eager recursive case: attempt to evaluate the path in which
-        // the next item is added to the record if valid.
-        let solution = self.clone().try_from_eager(margin, item, items.clone());
+        // Recursive Case: ...
+        let next_branch = || self.clone().try_from_match(margin, rest, item);
 
-        // Lazy recursive case: if the eager path found no solutions,
-        // evaluate the path where the next item is ignored.
-        solution.or_else(|| {
-            // If there are no more allotted errors, return no solutions.
-            (margin != 0)
-                .then_some(())
-                .and_then(|_| self.try_from_inner(margin - 1, items))
-        })
+        // Recursive Case: ...
+        let skip_branch = || self.clone().try_from_inner(margin - 1, rest);
+
+        // ...
+        next_branch().or_else(|| (margin > 0).then(skip_branch).flatten())
     }
 
     /// ...
-    pub fn try_from<I>(margin: usize, iter: I) -> Option<Record>
+    #[inline]
+    pub fn try_from<I>(margin: usize, items: I) -> Option<Self>
     where
         I: IntoIterator<Item = u32>,
-        I::IntoIter: Clone,
     {
+        // Collect items into a `Vec` to access as a slice for recursion.
+        let items = items.into_iter().collect::<Vec<_>>();
+
         // ...
-        Self::Empty.try_from_inner(margin, iter.into_iter())
+        Self::Empty.try_from_inner(margin, &items)
     }
 
     /// ...
     pub fn unwrap(self) -> Vec<u32> {
-        // Flatten record into a vector of levels.
         match self {
             Self::Empty => vec![],
             Self::Single(item) => vec![item],
