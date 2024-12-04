@@ -123,20 +123,6 @@ impl<T> Grid<T> {
     }
 
     /// ...
-    pub fn map<F, U>(&self, f: F) -> Grid<U>
-    where
-        F: Fn(&T) -> U,
-    {
-        let cursors = self.iter_cursors();
-
-        // Apply the given function to every value of the grid.
-        let items = cursors.map(|(row, col)| f(self.get(row, col).unwrap()));
-
-        // Collect from unchecked iterator because we know that dimensions are safe.
-        Grid::unchecked_from(items, self.rows, self.cols, self.cursor)
-    }
-
-    /// ...
     pub fn extend<F, U>(&self, f: F) -> Grid<U>
     where
         F: Fn(Grid<T>) -> U,
@@ -152,7 +138,7 @@ impl<T> Grid<T> {
 }
 
 /// ...
-pub fn check_matches(grid: Grid<char>) -> Option<NonZeroU32> {
+pub fn check_linear(grid: Grid<char>) -> Option<NonZeroU32> {
     // ...
     const OFFSETS: [(isize, isize); 8] = [
         (1, 0),
@@ -192,12 +178,41 @@ pub fn check_matches(grid: Grid<char>) -> Option<NonZeroU32> {
     matches.try_into().ok()
 }
 
+/// ...
+pub fn check_cross(grid: Grid<char>) -> bool {
+    // ...
+    let result = (*grid.extract() == 'A').then_some(());
+
+    // ...
+    let result = result.and_then(|_| {
+        // ...
+        let fst = *grid.shift(1, 1)?.extract();
+        let snd = *grid.shift(-1, -1)?.extract();
+
+        // ...
+        [('M', 'S'), ('S', 'M')].contains(&(fst, snd)).then_some(())
+    });
+
+    // ...
+    let result = result.and_then(|_| {
+        // ...
+        let fst = *grid.shift(1, -1)?.extract();
+        let snd = *grid.shift(-1, 1)?.extract();
+
+        // ...
+        [('M', 'S'), ('S', 'M')].contains(&(fst, snd)).then_some(())
+    });
+
+    // ...
+    result.map_or(false, |_| true)
+}
+
 #[aoc(day4, part1)]
 pub fn solve_part_1(input: &str) -> u32 {
     // ...
     let grid = Grid::try_from(input.lines().map(|line| line.chars())).unwrap();
 
-    grid.extend(check_matches)
+    grid.extend(check_linear)
         .iter_items()
         .filter_map(|x| *x)
         .map(|x| x.get())
@@ -206,8 +221,13 @@ pub fn solve_part_1(input: &str) -> u32 {
 
 #[aoc(day4, part2)]
 pub fn solve_part_2(input: &str) -> u32 {
-    // ![TODO]: implement `solve_part_2()`.
-    unimplemented!()
+    // ...
+    let grid = Grid::try_from(input.lines().map(|line| line.chars())).unwrap();
+
+    grid.extend(check_cross)
+        .iter_items()
+        .filter(|b| **b)
+        .count() as u32
 }
 
 #[cfg(test)]
@@ -218,5 +238,11 @@ mod tests {
     fn case_1() {
         let input = include_str!("./samples/sample_1.txt");
         assert_eq!(solve_part_1(input), 18);
+    }
+
+    #[test]
+    fn case_2() {
+        let input = include_str!("./samples/sample_1.txt");
+        assert_eq!(solve_part_2(input), 9);
     }
 }
