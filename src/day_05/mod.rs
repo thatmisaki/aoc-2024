@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -14,6 +15,27 @@ where
         .all(|(lhs, rhs)| map.get(lhs).map_or_else(|| false, |key| key.contains(rhs)))
         // Lazily evaluate the middle element upon successful matching.
         .then(|| &items[items.len() / 2])
+}
+
+/// ...
+pub fn match_unordered<T>(map: &HashMap<T, HashSet<T>>, items: &Vec<T>) -> Option<T>
+where
+    T: Eq + Hash + Clone,
+{
+    let mut new_items = items.clone();
+
+    new_items.sort_by(|lhs, rhs| {
+        map.get(lhs).map_or_else(
+            || Ordering::Greater,
+            |key| {
+                key.contains(rhs)
+                    .then_some(())
+                    .map_or_else(|| Ordering::Greater, |_| Ordering::Less)
+            },
+        )
+    });
+
+    (items != &new_items).then(move || new_items[new_items.len() / 2].clone())
 }
 
 /// ...
@@ -65,6 +87,21 @@ pub fn solve_part_1(input: &str) -> u32 {
         .sum()
 }
 
+#[aoc(day5, part2)]
+pub fn solve_part_2(input: &str) -> u32 {
+    // ...
+    let (rules, updates) = input.split_once("\n\n").unwrap();
+
+    // ...
+    let rules = parse_rules(rules).unwrap();
+    let updates = parse_updates(updates).unwrap();
+
+    updates
+        .iter()
+        .map(|update| match_unordered(&rules, update).unwrap_or(0))
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +110,11 @@ mod tests {
     fn case_1() {
         let input = include_str!("./samples/sample_1");
         assert_eq!(solve_part_1(input), 143);
+    }
+
+    #[test]
+    fn case_2() {
+        let input = include_str!("./samples/sample_1");
+        assert_eq!(solve_part_2(input), 123);
     }
 }
